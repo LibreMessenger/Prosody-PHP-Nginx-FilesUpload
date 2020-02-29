@@ -64,7 +64,8 @@ $CONFIG_CHUNK_SIZE = 4096;
 
 /* Do not edit below this line unless you know what you are doing (spoiler: nobody does) */
 
-$upload_file_name = substr($_SERVER['PHP_SELF'], strlen($_SERVER['SCRIPT_NAME'])+1);
+//$upload_file_name = substr($_SERVER['PHP_SELF'], strlen($_SERVER['SCRIPT_NAME'])+1);
+$upload_file_name = $_SERVER['UPLOADED_FILENAME'];
 $store_file_name = $CONFIG_STORE_DIR . '/store-' . hash('sha256', $upload_file_name);
 
 $request_method = $_SERVER['REQUEST_METHOD'];
@@ -75,62 +76,69 @@ header('Access-Control-Allow-Headers: Content-Type');
 header('Access-Control-Max-Age: 7200');
 header('Access-Control-Allow-Origin: *');
 
+//debug mode
+//error_log(var_export($_SERVER, TRUE));
+//error_log($upload_file_name);
+
 if(array_key_exists('v', $_GET) === TRUE && $request_method === 'PUT') {
-	$upload_file_size = $_SERVER['CONTENT_LENGTH'];
-	$upload_token = $_GET['v'];
+        $upload_file_size = $_SERVER['CONTENT_LENGTH'];
+        $upload_token = $_GET['v'];
 
-	$calculated_token = hash_hmac('sha256', "$upload_file_name $upload_file_size", $CONFIG_SECRET);
-	if(function_exists('hash_equals')) {
-		if(hash_equals($calculated_token, $upload_token) !== TRUE) {
-			error_log("Token mismatch: calculated $calculated_token got $upload_token");
-			header('HTTP/1.0 403 Forbidden');
-			exit;
-		}
-	}
-	else {
-		if($upload_token !== $calculated_token) {
-			error_log("Token mismatch: calculated $calculated_token got $upload_token");
-			header('HTTP/1.0 403 Forbidden');
-			exit;
-		}
-	}
-	/* Open a file for writing */
-	$store_file = fopen($store_file_name, 'x');
+        $calculated_token = hash_hmac('sha256', "$upload_file_name $upload_file_size", $CONFIG_SECRET);
 
-	if($store_file === FALSE) {
-		header('HTTP/1.0 409 Conflict');
-		exit;
-	}
+        if(function_exists('hash_equals')) {
+                if(hash_equals($calculated_token, $upload_token) !== TRUE) {
+                        error_log("Token mismatch: calculated $calculated_token got $upload_token");
+                        header('HTTP/1.0 403 Forbidden');
+                        exit;
+                }
+        }
+        else {
+//PHP hash_equals required https://modules.prosody.im/mod_http_upload_external.html
+//              if($upload_token !== $calculated_token) {
+//                      error_log("Token mismatch: calculated $calculated_token got $upload_token");
+                        header('HTTP/1.0 403 Forbidden');
+                        exit;
+//              }
+        }
 
-	/* PUT data comes in on the stdin stream */
-	$incoming_data = fopen('php://input', 'r');
+        /* Open a file for writing */
+        $store_file = fopen($store_file_name, 'x');
 
-	/* Read the data a chunk at a time and write to the file */
-	while ($data = fread($incoming_data, $CONFIG_CHUNK_SIZE)) {
-  		fwrite($store_file, $data);
-	}
+        if($store_file === FALSE) {
+                header('HTTP/1.0 409 Conflict');
+                exit;
+        }
 
-	/* Close the streams */
-	fclose($incoming_data);
-	fclose($store_file);
+        /* PUT data comes in on the stdin stream */
+        $incoming_data = fopen('php://input', 'r');
+
+        /* Read the data a chunk at a time and write to the file */
+        while ($data = fread($incoming_data, $CONFIG_CHUNK_SIZE)) {
+                fwrite($store_file, $data);
+        }
+
+        /* Close the streams */
+        fclose($incoming_data);
+        fclose($store_file);
 } else if($request_method === 'GET' || $request_method === 'HEAD') {
-	// Send file (using X-Sendfile would be nice here...)
-	if(file_exists($store_file_name)) {
-		header('Content-Disposition: attachment');
-		header('Content-Type: application/octet-stream');
-		header('Content-Length: '.filesize($store_file_name));
-		header("Content-Security-Policy: \"default-src 'none'\"");
-		header("X-Content-Security-Policy: \"default-src 'none'\"");
-		header("X-WebKit-CSP: \"default-src 'none'\"");
-		if($request_method !== 'HEAD') {
-			readfile($store_file_name);
-		}
-	} else {
-		header('HTTP/1.0 404 Not Found');
-	}
+        // Send file (using X-Sendfile would be nice here...)
+        if(file_exists($store_file_name)) {
+                header('Content-Disposition: attachment');
+                header('Content-Type: application/octet-stream');
+                header('Content-Length: '.filesize($store_file_name));
+                header("Content-Security-Policy: \"default-src 'none'\"");
+                header("X-Content-Security-Policy: \"default-src 'none'\"");
+                header("X-WebKit-CSP: \"default-src 'none'\"");
+                if($request_method !== 'HEAD') {
+                        readfile($store_file_name);
+                }
+        } else {
+                header('HTTP/1.0 404 Not Found');
+        }
 } else if($request_method === 'OPTIONS') {
 } else {
-	header('HTTP/1.0 400 Bad Request');
+        header('HTTP/1.0 400 Bad Request');
 }
 
 exit;
